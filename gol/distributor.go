@@ -59,6 +59,8 @@ func calculateAliveCells(p Params, world [][]byte) []util.Cell {
 	return alive
 }
 
+
+
 //sends a signal to distributor every 2 sec
 func ticka(everytwo chan bool, nalive chan int, count chan int) {
 	ticker := time.NewTicker(2 * time.Second)
@@ -221,11 +223,6 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 
 	var finalData [][]uint8
 
-	//create channels for each worker thread
-	iteration := make([]chan [][]byte, p.Threads)
-	for i:=0; i<p.Threads; i++ {
-		iteration[i] = make(chan [][]byte)
-	}
 
 	//used for correctly spilting up the world
 	ratio := p.ImageHeight/p.Threads
@@ -244,21 +241,50 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 		World:     world,
 		P:         p,
 		Ratio:     ratio,
-		Iteration: iteration,
-		Turn:      turn,
+		Turn:      0,
 	}
 
 	res := new(Response)
 
-	err = client.Call(GameOfLife, req, res)
-	if err != nil {
-		fmt.Println("client.call error")
-		os.Exit(1)
+	for i:=0; i<p.Turns; i++ {
+		select {
+		case command := <- everytwo:
+			switch command {
+			case true:
+				x := nAlive(p, world)
+				nalive <- x
+				fmt.Println("x:", x)
+			}
+		//case command := <- pause:
+		//	switch command {
+		//	case true:
+		//		fmt.Println("Current turn: ", turn)
+			//	<- resume
+			//	fmt.Println("Continuing")
+			//}
+		default:
+			err = client.Call(Gameoflifestring, req, res)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			req.Turn = req.Turn + 1
+			req.World = res.World
+			world = res.World
+			c.events <- TurnComplete{CompletedTurns: turn}
+			turn++
+		}
 	}
 
-	finalData = res.World
+	if p.Turns == 0{
+		finalData = world
+	} else {
+		finalData = res.World
+	}
+
 	fmt.Println("final data")
 
+	//writing world to .pgm file
 	sendWorld(finalData, c, p, filename, turn)
 
 	// Make sure that the Io has finished any output before exiting.

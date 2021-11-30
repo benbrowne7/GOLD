@@ -9,7 +9,6 @@ import (
 	"net/rpc"
 	"time"
 	"uk.ac.bris.cs/gameoflife/gol"
-
 )
 
 
@@ -69,10 +68,15 @@ func worker(startY, endY int, initial [][]byte, iteration chan<- [][]byte, p gol
 }
 
 //starts the required number of worker threads and splits up the 'world'
-func controller(ratio int, p gol.Params, iteration []chan [][]byte, world [][]byte, turn int) [][]byte {
+func controller(ratio int, p gol.Params, world [][]byte, turn int) [][]byte {
 	start := 0
 	end := ratio
 	temp := make(chan [][]byte)
+	iteration := make([]chan [][]byte, p.Threads)
+	for i:=0; i<p.Threads; i++ {
+		iteration[i] = make(chan [][]byte)
+	}
+	fmt.Println("iteration maker started")
 	go iterationMaker(iteration, temp, p)
 	if p.Threads == 1 {
 		go worker(0,p.ImageHeight,world,iteration[0], p, turn)
@@ -107,16 +111,16 @@ func iterationMaker(iteration []chan [][]byte, temp chan [][]byte, p gol.Params)
 }
 
 
-func ProcessGol(ratio int, p gol.Params, iteration []chan [][]byte, world [][]byte, turn int) [][]byte {
-	x := controller(ratio, p, iteration, world, turn)
+func ProcessGol(ratio int, p gol.Params, world [][]byte, turn int) [][]byte {
+	x := controller(ratio, p, world, turn)
 	return x
 
 }
 type GameOfLife struct {}
 
-func (s *GameOfLife) Pro(req gol.Request, res *gol.Response) (err error) {
+func (s *GameOfLife) Process(req gol.Request, res *gol.Response) (err error) {
 	fmt.Println("in GOL")
-	res.World = ProcessGol(req.Ratio, req.P, req.Iteration, req.World, req.Turn)
+	res.World = ProcessGol(req.Ratio, req.P, req.World, req.Turn)
 	return
 }
 

@@ -2,7 +2,7 @@ package gol
 
 
 
-var GameOfLife = "GameOfLife.Pro"
+var Gameoflifestring = "GameOfLife.Process"
 
 
 
@@ -14,7 +14,6 @@ type Request struct {
 	World     [][]byte
 	P         Params
 	Ratio     int
-	Iteration []chan [][]byte
 	Turn      int
 }
 
