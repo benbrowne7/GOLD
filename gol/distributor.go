@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/rpc"
-	"os"
 	"strconv"
+	"sync"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
 )
@@ -24,7 +24,6 @@ type distributorChannels struct {
 
 
 func handleError(err error) {
-	fmt.Println("errar")
 	log.Fatal(err)
 }
 
@@ -32,9 +31,10 @@ func handleError(err error) {
 //counts number of live cells given a world
 func nAlive(p Params, world [][]byte) int {
 	c := 0
+	g := world
 	for i:= 0; i<p.ImageHeight; i++ {
 		for z:= 0; z<p.ImageWidth; z++ {
-			if world[i][z] == 255 {
+			if g[i][z] == 255 {
 				c++
 			}
 		}
@@ -131,7 +131,7 @@ func update(world [][]byte, in chan [][]byte) {
 	in <- world
 }
 //handles different keypresses and does required things
-func keyPresses(k <-chan rune, world [][]byte, in chan [][]byte, c distributorChannels, p Params, filename string, turn *int, pause, resume chan bool) {
+func keyPresses(k <-chan rune, world [][]byte, c distributorChannels, p Params, filename string, turn *int, pause, resume chan bool, in chan [][]byte) {
 	for {
 		select {
 		case command := <- k:
@@ -146,11 +146,8 @@ func keyPresses(k <-chan rune, world [][]byte, in chan [][]byte, c distributorCh
 			switch command {
 			case 'q':
 				x := *turn
-				sendWorld(world, c, p, filename, x)
-				fileout := filename + "x" + strconv.Itoa(x) + "-" + strconv.Itoa(p.Threads)
-				imageOut(x, fileout, c)
 				sendState(2, x, c)
-				os.Exit(0)
+
 			}
 			switch command {
 			case 'p':
@@ -171,13 +168,13 @@ func keyPresses(k <-chan rune, world [][]byte, in chan [][]byte, c distributorCh
 
 
 func distributor(p Params, c distributorChannels, k <-chan rune) {
-	//server := flag.String("server","127.0.0.1:8030","IP:port string to connect to as server")
+	//brokerAddr := flag.String("broker","127.0.0.1:8030","IP:port string to connect to as server")
 	//flag.Parse()
-	server := "127.0.0.1:8030"
-	fmt.Println("Server: ", server)
-	client, err := rpc.Dial("tcp", server)
+	brokerAddr := "127.0.0.1:8030"
+	fmt.Println("Server: ", brokerAddr)
+	client, err := rpc.Dial("tcp", brokerAddr)
 	if err != nil {
-		fmt.Println("accept error")
+		fmt.Println("error connecting to broker")
 		handleError(err)
 	}
 	defer client.Close()
@@ -190,23 +187,22 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 	turn := 0
 
 	//makes 2d slice to store world
-	world := make([][]byte, p.ImageHeight)
-	for i := range world {
-		world[i] = make([]byte, p.ImageWidth)
+	inital := make([][]byte, p.ImageHeight)
+	for i := range inital {
+		inital[i] = make([]byte, p.ImageWidth)
 	}
 	//make channels
-	//in := make(chan [][]byte)
-	//pause := make(chan bool)
-	//resume := make(chan bool)
-
-	//go keyPresses(k, inital, in, c, p, filename, &turn, pause, resume)
+	in := make(chan [][]byte)
+	pause := make(chan bool)
+	resume := make(chan bool)
+	go keyPresses(k, inital, c, p, filename, &turn, pause, resume, in)
 
 	//sends cellFlipped events for every live cell in inital world
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
 			byte := <- c.ioInput
-			world[y][x] = byte
-			if world[y][x] == 255 {
+			inital[y][x] = byte
+			if inital[y][x] == 255 {
 				celly := CellFlipped{
 					CompletedTurns: turn,
 					Cell:           util.Cell{
@@ -231,12 +227,14 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 	nalive := make(chan int, p.Threads)
 	everytwo := make(chan bool)
 	count := make(chan int)
+	finished := false
 	go ticka(everytwo, nalive, count)
 	go aliveSender(count, &turn, c)
 	fmt.Println("aliveSender+ticker routines started")
 
 	//logic to control whether a turn is executed, execution paused or AliveCellCount funcs
 
+	world := inital
 	req := Request{
 		World:     world,
 		P:         p,
@@ -245,12 +243,31 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 	}
 
 	res := new(Response)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err = client.Call(Brokerstring, req, res)
+		finished = true
+		if err != nil {
+			handleError(err)
+		}
+	}()
 
-	for i:=0; i<p.Turns; i++ {
+	for {
+		if finished == true {
+			world = res.World
+			break
+		}
 		select {
 		case command := <- everytwo:
 			switch command {
 			case true:
+				ress := new(Alive)
+				reqq := Empty{}
+				client.Call(Brokeralive, reqq, ress)
+				world = ress.World
+				turn = ress.Turn
 				x := nAlive(p, world)
 				nalive <- x
 				fmt.Println("x:", x)
@@ -262,30 +279,24 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 			//	<- resume
 			//	fmt.Println("Continuing")
 			//}
-		default:
-			err = client.Call(Gameoflifestring, req, res)
-			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
-			}
-			req.Turn = req.Turn + 1
-			req.World = res.World
-			world = res.World
-			c.events <- TurnComplete{CompletedTurns: turn}
-			turn++
+		//default:
+			//world = res.World
+			//go update(world, in)
+			//c.events <- TurnComplete{CompletedTurns: turn}
 		}
 	}
 
 	if p.Turns == 0{
-		finalData = world
+		finalData = inital
 	} else {
-		finalData = res.World
+		finalData = world
 	}
 
 	fmt.Println("final data")
 
 	//writing world to .pgm file
 	sendWorld(finalData, c, p, filename, turn)
+
 
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle

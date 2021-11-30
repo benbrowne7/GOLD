@@ -2,7 +2,9 @@ package gol
 
 
 
+var Brokerstring = "Broker.Broka"
 var Gameoflifestring = "GameOfLife.Process"
+var Brokeralive = "Broker.Alive"
 
 
 
@@ -17,5 +19,12 @@ type Request struct {
 	Turn      int
 }
 
+type Alive struct {
+	World [][]byte
+	Turn int
+}
+
+type Empty struct {
+}
 
 

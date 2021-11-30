@@ -76,7 +76,6 @@ func controller(ratio int, p gol.Params, world [][]byte, turn int) [][]byte {
 	for i:=0; i<p.Threads; i++ {
 		iteration[i] = make(chan [][]byte)
 	}
-	fmt.Println("iteration maker started")
 	go iterationMaker(iteration, temp, p)
 	if p.Threads == 1 {
 		go worker(0,p.ImageHeight,world,iteration[0], p, turn)
@@ -92,6 +91,7 @@ func controller(ratio int, p gol.Params, world [][]byte, turn int) [][]byte {
 		}
 	}
 	x := <- temp
+	fmt.Println("iteration made + sent")
 	return x
 }
 
@@ -114,23 +114,23 @@ func iterationMaker(iteration []chan [][]byte, temp chan [][]byte, p gol.Params)
 func ProcessGol(ratio int, p gol.Params, world [][]byte, turn int) [][]byte {
 	x := controller(ratio, p, world, turn)
 	return x
-
 }
+
 type GameOfLife struct {}
 
 func (s *GameOfLife) Process(req gol.Request, res *gol.Response) (err error) {
-	fmt.Println("in GOL")
 	res.World = ProcessGol(req.Ratio, req.P, req.World, req.Turn)
-	return
+	return err
 }
 
 func main() {
-	pAddr := flag.String("port", "8030", "Port to listen on")
+	brokerAddr := flag.String("port", "8050", "Port to listen on")
 	flag.Parse()
 	rand.Seed(time.Now().UnixNano())
 	rpc.Register(&GameOfLife{})
 	fmt.Println("listening for clients")
-	listener, err := net.Listen("tcp", ":" + *pAddr)
+
+	listener, err := net.Listen("tcp", ":" + *brokerAddr)
 	if err != nil {
 		fmt.Println("accept error")
 		handleError(err)
