@@ -11,6 +11,9 @@ import (
 	"uk.ac.bris.cs/gameoflife/gol"
 )
 
+var x int
+var terminate1 chan bool
+var terminate2 chan bool
 
 func handleError(err error) {
 	fmt.Println("errar")
@@ -91,7 +94,6 @@ func controller(ratio int, p gol.Params, world [][]byte, turn int) [][]byte {
 		}
 	}
 	x := <- temp
-	fmt.Println("iteration made + sent")
 	return x
 }
 
@@ -110,16 +112,32 @@ func iterationMaker(iteration []chan [][]byte, temp chan [][]byte, p gol.Params)
 	}
 }
 
-
+//func which calls all the GOL logic and returns the new 'world'
 func ProcessGol(ratio int, p gol.Params, world [][]byte, turn int) [][]byte {
-	x := controller(ratio, p, world, turn)
-	return x
+	y := controller(ratio, p, world, turn)
+	return y
 }
 
-type GameOfLife struct {}
+type GameOfLife struct {
+	listener net.Listener
+	//terminate1 chan bool
+	//terminate2 chan bool
+}
 
-func (s *GameOfLife) Process(req gol.Request, res *gol.Response) (err error) {
+//broken method to shut down the server properly
+func (s *GameOfLife) Down(request gol.Request, res *gol.Update) (err error) {
+	fmt.Println("server down called")
+	terminate1 <- true
+	fmt.Println("true down terminate")
+	return err
+}
+
+//called every turn by Broker.Broka and sends the new 'world' back to the broker
+func (s *GameOfLife) Process(req gol.Request, res *gol.Final) (err error) {
 	res.World = ProcessGol(req.Ratio, req.P, req.World, req.Turn)
+	//if req.P.Turns == req.Turn - 1 {
+	//	terminate2 <- true
+	//}
 	return err
 }
 
@@ -129,12 +147,33 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	rpc.Register(&GameOfLife{})
 	fmt.Println("listening for clients")
+	x = 0
+	//var wg sync.WaitGroup
+	//terminate1 := make(chan bool)
+	//terminate2 := make(chan bool)
+
 
 	listener, err := net.Listen("tcp", ":" + *brokerAddr)
 	if err != nil {
 		fmt.Println("accept error")
 		handleError(err)
 	}
-	defer listener.Close()
+	s := new(GameOfLife)
+	s.listener = listener
+	//s.terminate1 = terminate1
+	//s.terminate2 = terminate2
+	//wg.Add(1)
 	rpc.Accept(listener)
+	//z := <- terminate1
+	//fmt.Println(z)
+	//for {
+		//select {
+		//case res := <- terminate1:
+		//	fmt.Println("Terminated through k:", res)
+		//	listener.Close()
+		//case res := <- terminate2:
+		//	fmt.Println("Terminated through finality:", res)
+		//	listener.Close()
+		//}
+	//}
 }

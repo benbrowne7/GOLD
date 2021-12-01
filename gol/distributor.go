@@ -10,7 +10,6 @@ import (
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
-//var GameOfLife = "GameOfLife.Process"
 
 
 type distributorChannels struct {
@@ -22,9 +21,12 @@ type distributorChannels struct {
 	ioInput    <-chan uint8
 }
 
-
+//handles any errors returned by RPC calls, prints error and exits
 func handleError(err error) {
-	log.Fatal(err)
+	if err != nil {
+		fmt.Println(err)
+		log.Fatal(err)
+	}
 }
 
 
@@ -58,7 +60,6 @@ func calculateAliveCells(p Params, world [][]byte) []util.Cell {
 	}
 	return alive
 }
-
 
 
 //sends a signal to distributor every 2 sec
@@ -126,42 +127,67 @@ func sendWorld(world [][]byte, c distributorChannels, p Params, filename string,
 		}
 	}
 }
-//used to update the 'world' for SDL Keypresses
-func update(world [][]byte, in chan [][]byte) {
-	in <- world
-}
+
+
 //handles different keypresses and does required things
-func keyPresses(k <-chan rune, world [][]byte, c distributorChannels, p Params, filename string, turn *int, pause, resume chan bool, in chan [][]byte) {
+func keyPresses(k <-chan rune, world [][]byte, c distributorChannels, p Params, filename string, turn *int, pause, resume chan bool, in chan [][]byte, client *rpc.Client) {
+	fmt.Println("in keypresses")
 	for {
 		select {
+		//calls broker to get update for turn number + world then outputs to pgm
 		case command := <- k:
 			switch command {
 			case 's':
-				x := *turn
-				sendWorld(world, c, p, filename, x)
+				ress := new(Update)
+				client.Call(Brokerupdate, Empty{}, ress)
+				x := ress.Turn
+				sendWorld(ress.World, c, p, filename, ress.Turn)
 				fileout := filename + "x" + strconv.Itoa(x) + "-" + strconv.Itoa(p.Threads)
 				imageOut(x, fileout, c)
 				sendState(1, x, c)
 			}
+			//closes the local controller, but broker/server still running
 			switch command {
 			case 'q':
-				x := *turn
+				ress := new(Update)
+				client.Call(Brokerupdate, Empty{}, ress)
+				x := ress.Turn
 				sendState(2, x, c)
-
+				client.Close()
 			}
+			//broken but supposedly calls broker which calls server and shuts all down properly
+			switch command {
+			case 'k':
+				ress := new(Update)
+				err := client.Call(Brokerdown, Empty{}, ress)
+				handleError(err)
+				x := ress.Turn
+				sendWorld(ress.World, c, p, filename, ress.Turn)
+				fileout := filename + "x" + strconv.Itoa(x) + "-" + strconv.Itoa(p.Threads)
+				imageOut(x, fileout, c)
+				sendState(2, x, c)
+				client.Close()
+			}
+			//updates turn number, calls broker to pause, waits for another 'p' keypress then calls broker to continue
 			switch command {
 			case 'p':
+				ress := new(Update)
+				client.Call(Brokerupdate, Empty{}, ress)
+				fmt.Println("Paused turn:", ress.Turn)
+				p1 := new(Empty)
+				client.Call(Brokerpause, Empty{}, p1)
 				pause <- true
+				sendState(0, ress.Turn, c)
 				for {
 					test := <- k
 					if test == 'p' {
+						p2 := new(Empty)
+						client.Call(Brokercontinue, Empty{}, p2)
 						resume <- true
 						break
 					}
 				}
 			}
-		default:
-			world = <- in
 		}
 	}
 }
@@ -195,13 +221,13 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 	in := make(chan [][]byte)
 	pause := make(chan bool)
 	resume := make(chan bool)
-	go keyPresses(k, inital, c, p, filename, &turn, pause, resume, in)
+	go keyPresses(k, inital, c, p, filename, &turn, pause, resume, in, client)
 
 	//sends cellFlipped events for every live cell in inital world
 	for y := 0; y < p.ImageHeight; y++ {
 		for x := 0; x < p.ImageWidth; x++ {
-			byte := <- c.ioInput
-			inital[y][x] = byte
+			bytez := <- c.ioInput
+			inital[y][x] = bytez
 			if inital[y][x] == 255 {
 				celly := CellFlipped{
 					CompletedTurns: turn,
@@ -234,6 +260,7 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 
 	//logic to control whether a turn is executed, execution paused or AliveCellCount funcs
 
+	//creates inital request with all needed info
 	world := inital
 	req := Request{
 		World:     world,
@@ -242,7 +269,8 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 		Turn:      0,
 	}
 
-	res := new(Response)
+	//calls the main broker method - Broker.Broka in a go func
+	res := new(Final)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -254,6 +282,7 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 		}
 	}()
 
+	//for loop which handles the live cells every two seconds count, pauses if 'p' pressed and breaks when Broker.Broka finishes
 	for {
 		if finished == true {
 			world = res.World
@@ -263,29 +292,24 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 		case command := <- everytwo:
 			switch command {
 			case true:
-				ress := new(Alive)
+				ress := new(Update)
 				reqq := Empty{}
-				client.Call(Brokeralive, reqq, ress)
+				client.Call(Brokerupdate, reqq, ress)
 				world = ress.World
 				turn = ress.Turn
 				x := nAlive(p, world)
 				nalive <- x
 				fmt.Println("x:", x)
 			}
-		//case command := <- pause:
-		//	switch command {
-		//	case true:
-		//		fmt.Println("Current turn: ", turn)
-			//	<- resume
-			//	fmt.Println("Continuing")
-			//}
-		//default:
-			//world = res.World
-			//go update(world, in)
-			//c.events <- TurnComplete{CompletedTurns: turn}
+		case command := <- pause:
+			switch command {
+			case true:
+				<- resume
+			}
 		}
 	}
 
+	//sets finalData up properly
 	if p.Turns == 0{
 		finalData = inital
 	} else {
@@ -295,7 +319,7 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 	fmt.Println("final data")
 
 	//writing world to .pgm file
-	sendWorld(finalData, c, p, filename, turn)
+	sendWorld(finalData, c, p, filename, p.Turns)
 
 
 	// Make sure that the Io has finished any output before exiting.
@@ -304,7 +328,7 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 
 	fileout := filename + "x" + strconv.Itoa(p.Turns) + "-" + strconv.Itoa(p.Threads)
 
-	imageOut(turn, fileout, c)
+	imageOut(p.Turns, fileout, c)
 
 	alive := calculateAliveCells(p, finalData)
 	fmt.Println("turns executed")
@@ -312,13 +336,13 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 
 	//Reports the final state using FinalTurnCompleteEvent.
 	final := FinalTurnComplete{
-		CompletedTurns: turn,
+		CompletedTurns: p.Turns,
 		Alive:          alive,
 	}
 	c.events <- final
 	fmt.Println("final state sent")
 
-	c.events <- StateChange{turn, Quitting}
+	c.events <- StateChange{p.Turns, Quitting}
 
 	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 	close(c.events)
