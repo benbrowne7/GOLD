@@ -14,8 +14,6 @@ import (
 )
 
 
-
-//to run:  go test -run=Bench -bench BenchmarkGol
 func BenchmarkGol(b *testing.B) {
 	// Disable all program output apart from benchmark results
 	os.Stdout = nil
@@ -44,6 +42,7 @@ func BenchmarkGol(b *testing.B) {
 		wg.Wait()
 	}
 }
+
 
 // TestGol tests 16x16, 64x64 and 512x512 images on 0, 1 and 100 turns using 1-16 worker threads.
 func TestGol(t *testing.T) {
@@ -124,7 +123,6 @@ func readAliveCells(path string, width, height int) []util.Cell {
 	util.Check(ioError)
 
 	fields := strings.Fields(string(data))
-
 
 	if fields[0] != "P5" {
 		panic("Not a pgm file")

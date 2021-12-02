@@ -64,7 +64,7 @@ func (b *Broker) Update(req gol.Empty, res *gol.Update) (err error) {
 //Main Broker Method called once by distributor: establishes connection with the server and calls the Server GOL logic for every turn
 func (b *Broker) Broka(req gol.Request, res *gol.Final) (err error) {
 	//serverAddr := flag.String("broker", "127.0.0.1:8050", "Address of broker instance")
-	serverAddr := "127.0.0.1:8050"
+	serverAddr := "44.200.50.109:8050"
 	fmt.Println("Server: ", serverAddr)
 	client, err := rpc.Dial("tcp", serverAddr)
 	if err != nil {
