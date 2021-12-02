@@ -3,46 +3,13 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
 	"uk.ac.bris.cs/gameoflife/gol"
 	"uk.ac.bris.cs/gameoflife/util"
 )
-
-
-func BenchmarkGol(b *testing.B) {
-	// Disable all program output apart from benchmark results
-	os.Stdout = nil
-	var wg sync.WaitGroup
-	test := gol.Params{ImageWidth: 512, ImageHeight: 512, Turns: 100}
-	for threads := 1; threads <= 16; threads++ {
-		test.Threads = threads
-		testName := fmt.Sprintf("%dx%dx%d-%d", test.ImageWidth, test.ImageHeight, test.Turns, test.Threads)
-		b.Run(testName, func(b *testing.B) {
-			for i := 0; i<b.N; i++ {
-				wg.Add(1)
-				events := make(chan gol.Event)
-				go func() {
-					defer wg.Done()
-					gol.Run(test, events, nil)
-				}()
-				var cells []util.Cell
-				for event := range events {
-					switch e := event.(type) {
-					case gol.FinalTurnComplete:
-						e.Alive = cells
-					}
-				}
-			}
-		})
-		wg.Wait()
-	}
-}
-
 
 // TestGol tests 16x16, 64x64 and 512x512 images on 0, 1 and 100 turns using 1-16 worker threads.
 func TestGol(t *testing.T) {
