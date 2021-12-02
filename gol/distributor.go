@@ -74,8 +74,6 @@ func ticka(everytwo chan bool, nalive chan int, count chan int) {
 func bufferget(nalive chan int, count chan int) {
 	x := <- nalive
 	count <- x
-	fmt.Println("sent value to count:", x)
-
 }
 //sends an aliveEvent to c.events
 func aliveSender(count chan int, turn *int, c distributorChannels) {
@@ -119,7 +117,7 @@ func imageOut(turn int, fileout string, c distributorChannels) {
 //sends 'world' data byte by byte down c.ioOutput
 func sendWorld(world [][]byte, c distributorChannels, p Params, filename string, turn int) {
 	c.ioCommand <- ioOutput
-	fileout := filename + "x" + strconv.Itoa(turn) + "-" + strconv.Itoa(p.Threads)
+	fileout := filename + "x" + strconv.Itoa(turn)
 	c.ioFilename <- fileout
 	for i:=0; i<p.ImageHeight; i++ {
 		for z:=0; z<p.ImageWidth; z++{
@@ -171,11 +169,11 @@ func keyPresses(k <-chan rune, world [][]byte, c distributorChannels, p Params, 
 			//updates turn number, calls broker to pause, waits for another 'p' keypress then calls broker to continue
 			switch command {
 			case 'p':
+				p1 := new(Empty)
+				client.Call(Brokerpause, Empty{}, p1)
 				ress := new(Update)
 				client.Call(Brokerupdate, Empty{}, ress)
 				fmt.Println("Paused turn:", ress.Turn)
-				p1 := new(Empty)
-				client.Call(Brokerpause, Empty{}, p1)
 				pause <- true
 				sendState(0, ress.Turn, c)
 				for {
@@ -275,6 +273,9 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		//called to ensure Broker is not stuck in pause loop (on reconnections)
+		client.Call(Brokercontinue, Empty{}, new(Empty))
+		//now call main Broker method
 		err = client.Call(Brokerstring, req, res)
 		finished = true
 		if err != nil {
@@ -293,13 +294,18 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 			switch command {
 			case true:
 				ress := new(Update)
-				reqq := Empty{}
-				client.Call(Brokerupdate, reqq, ress)
+				p1 := new(Empty)
+				client.Call(Brokerpause, Empty{}, p1)
+				time.Sleep(50 * time.Millisecond)
+				client.Call(Brokerupdate, Empty{}, ress)
 				world = ress.World
 				turn = ress.Turn
 				x := nAlive(p, world)
 				nalive <- x
 				fmt.Println("x:", x)
+				p2 := new(Empty)
+				time.Sleep(50 * time.Millisecond)
+				client.Call(Brokercontinue, Empty{}, p2)
 			}
 		case command := <- pause:
 			switch command {

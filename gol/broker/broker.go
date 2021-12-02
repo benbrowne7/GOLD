@@ -79,12 +79,15 @@ func (b *Broker) Broka(req gol.Request, res *gol.Final) (err error) {
 
 	for i:=0; i<req.P.Turns; i++ {
 		if pause == 1 {
-			fmt.Println("in pause logic")
+			//fmt.Println("broker paused")
+			time.Sleep(20 * time.Millisecond)
 			for {
-				if pause != 0 {
-					continue
-				} else {
+				if pause == 0 {
+					//fmt.Println("unpaused")
+					time.Sleep(20 * time.Millisecond)
 					break
+				} else {
+					continue
 				}
 			}
 		}
