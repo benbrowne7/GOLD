@@ -45,18 +45,23 @@ func (io *ioState) writePgmImage() {
 	// Request a filename from the distributor.
 	filename := <-io.channels.filename
 
+
 	file, ioError := os.Create("out/" + filename + ".pgm")
 	util.Check(ioError)
 	defer file.Close()
 
+
+
 	_, _ = file.WriteString("P5\n")
-	//_, _ = file.WriteString("# PGM file writer by pnmmodules (https://github.com/owainkenwayucl/pnmmodules).\n")
+	// _, _ = file.WriteString("# PGM file writer by pnmmodules (https://github.com/owainkenwayucl/pnmmodules).\n")
 	_, _ = file.WriteString(strconv.Itoa(io.params.ImageWidth))
 	_, _ = file.WriteString(" ")
 	_, _ = file.WriteString(strconv.Itoa(io.params.ImageHeight))
 	_, _ = file.WriteString("\n")
 	_, _ = file.WriteString(strconv.Itoa(255))
 	_, _ = file.WriteString("\n")
+
+
 
 	world := make([][]byte, io.params.ImageHeight)
 	for i := range world {
@@ -66,9 +71,6 @@ func (io *ioState) writePgmImage() {
 	for y := 0; y < io.params.ImageHeight; y++ {
 		for x := 0; x < io.params.ImageWidth; x++ {
 			val := <-io.channels.output
-			//if val != 0 {
-			//	fmt.Println(x, y)
-			//}
 			world[y][x] = val
 		}
 	}
