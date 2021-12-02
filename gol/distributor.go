@@ -29,6 +29,22 @@ func handleError(err error) {
 	}
 }
 
+func cellFlipped(old [][]byte, new[][]byte, turn int, c distributorChannels, p Params) {
+	celly := CellFlipped{
+		CompletedTurns: turn,
+		Cell:           util.Cell{X: 0, Y: 0},
+	}
+	for i:= 0; i<p.ImageHeight; i++ {
+		for z:= 0; z<p.ImageWidth; z++ {
+			if old[i][z] != new[i][z] {
+				celly.Cell.X = z
+				celly.Cell.Y = i
+				c.events <- celly
+			}
+		}
+	}
+}
+
 
 //counts number of live cells given a world
 func nAlive(p Params, world [][]byte) int {
@@ -129,7 +145,6 @@ func sendWorld(world [][]byte, c distributorChannels, p Params, filename string,
 
 //handles different keypresses and does required things
 func keyPresses(k <-chan rune, world [][]byte, c distributorChannels, p Params, filename string, turn *int, pause, resume chan bool, in chan [][]byte, client *rpc.Client) {
-	fmt.Println("in keypresses")
 	for {
 		select {
 		//calls broker to get update for turn number + world then outputs to pgm
@@ -283,6 +298,22 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 		}
 	}()
 
+	//calculates flipped cells every 50ms and sends required events to render sdl image
+	go func() {
+		old := world
+		sdlticker := time.NewTicker(50 * time.Millisecond)
+		for _ = range sdlticker.C {
+			if finished == true {
+				break
+			}
+			up := new(Update)
+			client.Call(Brokerupdate, Empty{}, up)
+			cellFlipped(old, up.World, up.Turn, c, p)
+			c.events <- TurnComplete{CompletedTurns: up.Turn}
+			old = up.World
+		}
+	}()
+
 	//for loop which handles the live cells every two seconds count, pauses if 'p' pressed and breaks when Broker.Broka finishes
 	for {
 		if finished == true {
@@ -296,7 +327,7 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 				ress := new(Update)
 				p1 := new(Empty)
 				client.Call(Brokerpause, Empty{}, p1)
-				time.Sleep(50 * time.Millisecond)
+				time.Sleep(25 * time.Millisecond)
 				client.Call(Brokerupdate, Empty{}, ress)
 				world = ress.World
 				turn = ress.Turn
@@ -304,7 +335,7 @@ func distributor(p Params, c distributorChannels, k <-chan rune) {
 				nalive <- x
 				fmt.Println("x:", x)
 				p2 := new(Empty)
-				time.Sleep(50 * time.Millisecond)
+				time.Sleep(25 * time.Millisecond)
 				client.Call(Brokercontinue, Empty{}, p2)
 			}
 		case command := <- pause:

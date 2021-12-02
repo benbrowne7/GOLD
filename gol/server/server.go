@@ -11,9 +11,9 @@ import (
 	"uk.ac.bris.cs/gameoflife/gol"
 )
 
-var x int
-var terminate1 chan bool
-var terminate2 chan bool
+//var t int
+//var terminate1 chan bool
+//var terminate2 chan bool
 
 func handleError(err error) {
 	fmt.Println("errar")
@@ -119,7 +119,7 @@ func ProcessGol(ratio int, p gol.Params, world [][]byte, turn int) [][]byte {
 }
 
 type GameOfLife struct {
-	listener net.Listener
+
 	//terminate1 chan bool
 	//terminate2 chan bool
 }
@@ -127,7 +127,7 @@ type GameOfLife struct {
 //broken method to shut down the server properly
 func (s *GameOfLife) Down(request gol.Request, res *gol.Update) (err error) {
 	fmt.Println("server down called")
-	terminate1 <- true
+	//t = 1
 	fmt.Println("true down terminate")
 	return err
 }
@@ -135,9 +135,6 @@ func (s *GameOfLife) Down(request gol.Request, res *gol.Update) (err error) {
 //called every turn by Broker.Broka and sends the new 'world' back to the broker
 func (s *GameOfLife) Process(req gol.Request, res *gol.Final) (err error) {
 	res.World = ProcessGol(req.Ratio, req.P, req.World, req.Turn)
-	//if req.P.Turns == req.Turn - 1 {
-	//	terminate2 <- true
-	//}
 	return err
 }
 
@@ -147,10 +144,6 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	rpc.Register(&GameOfLife{})
 	fmt.Println("listening for clients")
-	x = 0
-	//var wg sync.WaitGroup
-	//terminate1 := make(chan bool)
-	//terminate2 := make(chan bool)
 
 
 	listener, err := net.Listen("tcp", ":" + *brokerAddr)
@@ -158,22 +151,6 @@ func main() {
 		fmt.Println("accept error")
 		handleError(err)
 	}
-	s := new(GameOfLife)
-	s.listener = listener
-	//s.terminate1 = terminate1
-	//s.terminate2 = terminate2
-	//wg.Add(1)
+
 	rpc.Accept(listener)
-	//z := <- terminate1
-	//fmt.Println(z)
-	//for {
-		//select {
-		//case res := <- terminate1:
-		//	fmt.Println("Terminated through k:", res)
-		//	listener.Close()
-		//case res := <- terminate2:
-		//	fmt.Println("Terminated through finality:", res)
-		//	listener.Close()
-		//}
-	//}
 }

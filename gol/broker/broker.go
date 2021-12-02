@@ -16,6 +16,8 @@ import (
 var world [][]byte
 var turn int
 
+//var t int
+
 var pause int
 
 //var terminate chan bool
@@ -48,9 +50,9 @@ func (b *Broker) Continue(req gol.Empty, res *gol.Empty) (err error) {
 func (b *Broker) Down(req gol.Request, res *gol.Update) (err error) {
 	res.World = world
 	res.Turn = turn
-	errr := b.client.Call(gol.Gameoflifedown, gol.Empty{}, gol.Empty{})
+	errr := b.client.Call(gol.Gameoflifedown, gol.Empty{}, new(gol.Empty))
 	handleError(errr)
-	//terminate <- true
+	time.Sleep(200 * time.Millisecond)
 	return err
 }
 
@@ -65,6 +67,7 @@ func (b *Broker) Update(req gol.Empty, res *gol.Update) (err error) {
 func (b *Broker) Broka(req gol.Request, res *gol.Final) (err error) {
 	//serverAddr := flag.String("broker", "127.0.0.1:8050", "Address of broker instance")
 	serverAddr := "127.0.0.1:8050"
+	//serverAddr := "44.200.51.206:8050"
 	fmt.Println("Server: ", serverAddr)
 	client, err := rpc.Dial("tcp", serverAddr)
 	if err != nil {
@@ -72,7 +75,6 @@ func (b *Broker) Broka(req gol.Request, res *gol.Final) (err error) {
 		handleError(err)
 	}
 	defer client.Close()
-	b.client = client
 
 	turn = 0
 	world = req.World
@@ -120,18 +122,12 @@ func main() {
 		handleError(err)
 	}
 	pause = 0
-	b := new(Broker)
-	b.listener = listener
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		rpc.Accept(listener)
 	}()
-	//<- terminate
-	//time.Sleep(500 * time.Millisecond)
+
 	wg.Wait()
-
-
-
 }
